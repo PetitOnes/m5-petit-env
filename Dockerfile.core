@@ -45,7 +45,9 @@ RUN curl -fsSL -o /usr/local/bin/supercronic "${SUPERCRONIC_URL}" \
     && chmod +x /usr/local/bin/supercronic
 
 # ---- 非rootユーザー ----
-RUN useradd --create-home --shell /bin/bash --uid 1000 petit \
+# ubuntu:24.04 にはデフォルトで ubuntu ユーザー(UID 1000)がいるため先に削除する
+RUN userdel -r ubuntu 2>/dev/null || true \
+    && useradd --create-home --shell /bin/bash --uid 1000 petit \
     && mkdir -p /data /opt/petit/repos /opt/petit/scripts /opt/petit/cron /home/petit/.claude \
     && chown -R petit:petit /data /opt/petit /home/petit
 
