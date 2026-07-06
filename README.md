@@ -1,0 +1,115 @@
+# m5-petit-env
+
+## [English Page](./README_en.md)
+
+M5 Petit(ぷち)をDockerで動かすためのumbrella実行環境です。[m5-petit-mcp](https://github.com/PetitOnes/m5-petit-mcp) / [m5-petit-app](https://github.com/PetitOnes/m5-petit-app) / [m5-petit-memory](https://github.com/PetitOnes/m5-petit-memory) / [m5-petit-desire](https://github.com/PetitOnes/m5-petit-desire) / [m5-petit-scripts](https://github.com/PetitOnes/m5-petit-scripts) を1つのコンテナに組み合わせ、cron相当の自律行動・ダッシュボード・記憶整理などをまとめて起動します。
+
+> **Phase 1 (2026-07): authored, build-untested**
+> このリポジトリは、Docker未導入の開発機の上で書かれました。`docker build` / `docker compose up` は
+> まだ一度も実行できていません。検証できたのは以下のみです:
+> - YAML構文(`python -c "import yaml; yaml.safe_load(...)"`)
+> - シェルスクリプト構文(`bash -n`)
+> - Dockerfileの静的な妥当性(目視・バージョン整合性の確認)
+>
+> 実機(Docker導入済み環境)でのビルド・起動確認はPhase 1の残タスクです。
+
+## 構成
+
+```
+docker-compose.yml           # dev: repos/ をビルドコンテキストにする
+docker-compose.release.yml   # release: ghcr.io/petitones/* イメージ(将来用の雛形、Phase 4で運用開始予定)
+Dockerfile.core               # ubuntu 24.04 + node(claude CLI) + uv + supercronic
+.env.example
+cron/petit.cron               # supercronic用crontab
+scripts/
+  sync-repos.sh / .ps1        # PetitOnesの各コンポーネントを repos/ にclone/pull
+  start.sh / .ps1             # sync-repos + docker compose up をまとめて実行
+  petit.sh                    # update / logs / status / stop
+  entrypoint.sh                # コンテナのエントリポイント(supercronic + ダッシュボード + 体験デーモン見張り)
+  autonomous-action.sh         # 自律行動スクリプト(コンテナ内汎用版)
+  experience-watchdog.sh       # 体験デーモン見張り(Phase 1時点ではプレースホルダー)
+  run-for-each-character.sh    # CHARACTER_IDSを展開して各ジョブを実行する窓口
+release/
+  start-windows.bat / start-macos.command   # ダブルクリック起動(Phase 4で運用開始予定)
+  README-for-users.md
+sample-character/             # サンプルキャラ雛形(人格・実IPは含まない)
+repos/.gitkeep                 # sync-repos.shの展開先
+```
+
+## 使い方(開発者向け・dev)
+
+### 必要なもの
+
+- Docker Desktop または Docker Engine
+- Git
+- 自分のClaudeアカウント(サブスクリプション or APIキー)
+
+### セットアップ
+
+```bash
+git clone https://github.com/PetitOnes/m5-petit-env.git
+cd m5-petit-env
+cp .env.example .env
+# .env を編集: CHARACTER_IDS, M5_HOSTS_<ID> など
+```
+
+### 起動
+
+```bash
+./scripts/start.sh
+```
+
+内部で `scripts/sync-repos.sh`(コンポーネントリポジトリのclone/pull)→ `docker compose up --build` を実行します。
+
+初回のみ、別ターミナルでClaude認証:
+
+```bash
+docker compose exec core claude login
+```
+
+起動後、ダッシュボードは `http://localhost:8765`。
+
+### 日常操作
+
+```bash
+./scripts/petit.sh update   # コンポーネントを最新化してビルド・再起動
+./scripts/petit.sh logs -f  # ログをフォロー
+./scripts/petit.sh status   # コンテナの状態
+./scripts/petit.sh stop     # 停止
+```
+
+更新はこちらの手動操作が主導権を持ちます(自動更新はしません。生きているぷちを日中に勝手に再起動しないため)。
+
+## キャラクターを作る
+
+`sample-character/` をコピーして、`.env` の `PETIT_DATA_DIR` に対応するホスト側ディレクトリの
+`characters/<id>/` に配置してください。詳しくは [sample-character/README.md](./sample-character/README.md)。
+
+## コンテナで動くもの
+
+| # | コンポーネント | 動き方 |
+|---|---|---|
+| 1 | claude CLI + 自律行動 | supercronicが20分ごとに実行 |
+| 2 | MCPサーバー群(m5-mcp / memory / desire-system) | claude CLIが都度spawn |
+| 3 | ダッシュボード(m5-petit-app, FastAPI :8765) | コンテナ内で常駐 |
+| 4 | 欲求システム更新・記憶整理 | supercronicに集約 |
+| 5 | 体験デーモン見張り | Phase 1時点ではプレースホルダー(下記「既知の制約」参照) |
+
+## OS対応
+
+Windows / macOS / Linux、いずれもDocker Desktop(またはLinuxはDocker Engine)で動作する設計です。
+M5デバイスとの接続はIP指定を基本とします(コンテナ内からmDNS `.local` ホスト名は解決できないことが多いため)。
+
+音声(TTS/ASR)はCPUフォールバック、または音声なし構成で動く設計です。GPUを使う場合は外部マシンで
+[m5-petit-speech](https://github.com/PetitOnes/m5-petit-speech) / [m5-petit-voice-recognition](https://github.com/PetitOnes/m5-petit-voice-recognition) を動かし、`.env` でURLを指定してください。
+
+## 既知の制約(Phase 1)
+
+- **ビルド未検証**。前述のとおり `docker build` / `docker compose up` は未実行
+- **notes-mcp / relations-mcp はまだ含まれていません**。PetitOnesにこの2つのMCPサーバーの公開リポジトリがまだ無いため、`autonomous-action.sh` の allowedTools には含めていません(公開され次第、追加予定)
+- **体験デーモン(experience-daemon)相当の公開コンポーネントがまだ存在しません**。`scripts/experience-watchdog.sh` は対象ディレクトリが見つからなければ何もせずスキップする、将来のためのプレースホルダーです
+- `docker-compose.release.yml` / `release/*` は雛形です。`ghcr.io/petitones/m5-petit-core` イメージはまだ公開されていません(Phase 4で対応予定)
+
+## ライセンス
+
+Apache License 2.0. [LICENSE](./LICENSE) を参照。

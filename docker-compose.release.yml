@@ -1,0 +1,25 @@
+# release用compose: GHCRのビルド済みイメージを使う(Phase 4で運用開始予定の雛形)。
+# コンポーネントのコードはイメージビルド時にCOPY済みのため repos/ のバインドマウントは無い。
+# Phase 1時点ではイメージはまだ存在しない(ghcr.io/petitones/m5-petit-core は未公開)。
+services:
+  core:
+    image: ghcr.io/petitones/m5-petit-core:latest
+    container_name: petit-core
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+      PETIT_DATA_DIR: /data
+      CHARACTER_IDS: ${CHARACTER_IDS:-alice}
+    ports:
+      - "${DASHBOARD_PORT:-8765}:8765"
+    volumes:
+      - petit-data:/data
+      - petit-claude-auth:/home/petit/.claude
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+volumes:
+  petit-data:
+  petit-claude-auth:

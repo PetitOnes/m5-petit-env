@@ -1,0 +1,35 @@
+# dev用compose: repos/ 配下(scripts/sync-repos.shで取得)をコンテナにマウントし、
+# Dockerfile.core からビルドする。
+# Phase 1 (2026-07): authored, build-untested — docker未導入の開発機で書かれたため
+# `docker compose up` はまだ一度も実行できていない。
+services:
+  core:
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+    image: m5-petit-env-core:dev
+    container_name: petit-core
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+      PETIT_DATA_DIR: /data
+      CHARACTER_IDS: ${CHARACTER_IDS:-alice}
+    ports:
+      - "${DASHBOARD_PORT:-8765}:8765"
+    volumes:
+      - petit-data:/data
+      - petit-claude-auth:/home/petit/.claude
+      - ./repos/m5-petit-mcp:/opt/petit/repos/m5-petit-mcp:ro
+      - ./repos/m5-petit-app:/opt/petit/repos/m5-petit-app:ro
+      - ./repos/m5-petit-memory:/opt/petit/repos/m5-petit-memory:ro
+      - ./repos/m5-petit-desire:/opt/petit/repos/m5-petit-desire:ro
+      - ./repos/m5-petit-scripts:/opt/petit/repos/m5-petit-scripts:ro
+      - ./sample-character:/opt/petit/sample-character:ro
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+volumes:
+  petit-data:
+  petit-claude-auth:

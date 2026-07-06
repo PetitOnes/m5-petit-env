@@ -1,0 +1,75 @@
+# syntax=docker/dockerfile:1
+#
+# m5-petit-env / core image
+#
+# ぷち(M5 Petit)を動かすのに必要な一式(claude CLI + MCPサーバー群 + ダッシュボード + cron)を
+# 1つのコンテナにまとめたもの。非rootユーザー(petit)で動かす。
+#
+# Phase 1 (2026-07): authored, build-untested — この Dockerfile は開発機に docker が
+# 導入されていない状態で書かれた。`docker build` はまだ一度も実行できていない。
+# 静的な確認(構文・バージョン整合性)のみ済み。
+FROM ubuntu:24.04
+
+# ---- ビルド時に固定するバージョン ----
+ARG NODE_MAJOR=20
+ARG SUPERCRONIC_VERSION=v0.2.47
+ARG SUPERCRONIC_SHA256=dcb1403c188a9438c47d4bba82a9c357fc9351ce91627fb2bae627f0f5becfc4
+ARG SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-amd64
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    PETIT_DATA_DIR=/data \
+    PATH=/home/petit/.local/bin:/home/petit/.npm-global/bin:$PATH
+
+# ---- OSパッケージ ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      git \
+      jq \
+      python3 \
+      python3-venv \
+      python3-pip \
+      tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- Node.js 20系 + claude CLI ----
+RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g @anthropic-ai/claude-code
+
+# ---- supercronic (バージョン・sha256を固定) ----
+RUN curl -fsSL -o /usr/local/bin/supercronic "${SUPERCRONIC_URL}" \
+    && echo "${SUPERCRONIC_SHA256}  /usr/local/bin/supercronic" | sha256sum -c - \
+    && chmod +x /usr/local/bin/supercronic
+
+# ---- 非rootユーザー ----
+RUN useradd --create-home --shell /bin/bash --uid 1000 petit \
+    && mkdir -p /data /opt/petit/repos /opt/petit/scripts /opt/petit/cron /home/petit/.claude \
+    && chown -R petit:petit /data /opt/petit /home/petit
+
+USER petit
+WORKDIR /opt/petit
+
+# ---- uv (astral公式インストーラ、petitユーザーとして) ----
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# ---- コンテナ内スクリプト・crontab ----
+COPY --chown=petit:petit cron/petit.cron /opt/petit/cron/petit.cron
+COPY --chown=petit:petit scripts/entrypoint.sh /opt/petit/entrypoint.sh
+COPY --chown=petit:petit scripts/autonomous-action.sh /opt/petit/scripts/autonomous-action.sh
+COPY --chown=petit:petit scripts/experience-watchdog.sh /opt/petit/scripts/experience-watchdog.sh
+COPY --chown=petit:petit scripts/run-for-each-character.sh /opt/petit/scripts/run-for-each-character.sh
+
+RUN chmod +x /opt/petit/entrypoint.sh /opt/petit/scripts/*.sh
+
+# /data: キャラデータ(PETIT_DATA_DIR)。 /home/petit/.claude: claude CLIの認証情報(別ボリューム)
+VOLUME ["/data", "/home/petit/.claude"]
+
+# コンポーネントのコードは /opt/petit/repos/ に置く想定
+# (dev: docker-compose.yml でホストの repos/ をバインドマウント、release: COPYで焼き込み)
+
+EXPOSE 8765
+
+ENTRYPOINT ["/opt/petit/entrypoint.sh"]

@@ -1,0 +1,24 @@
+# m5-petit-env / supercronic crontab
+#
+# 元(埋め込み型モノリポ)のcrontabを汎用化したもの。
+# キャラクターごとに個別のcron行を書く代わりに、CHARACTER_IDS環境変数(カンマ区切り)を
+# 動的に読み込む run-for-each-character.sh を各ジョブから呼ぶ。
+# パスはすべてコンテナ内パス(/opt/petit/... , /data/...)。
+#
+# supercronicの書式は標準cron(5フィールド)+ @hourly 等のショートハンドに対応。
+# @reboot 相当の処理(ダッシュボード起動・体験デーモンの初回起動)は
+# supercronicではなく entrypoint.sh 側で行う。
+
+# 自律行動: 20分ごとに CHARACTER_IDS の各キャラを順に実行
+*/20 * * * * /opt/petit/scripts/run-for-each-character.sh autonomous >> /data/logs/autonomous-cron.log 2>&1
+
+# 欲求システム更新(desire updater): 5分ごと
+*/5 * * * * /opt/petit/scripts/run-for-each-character.sh desire >> /data/logs/desire-cron.log 2>&1
+
+# 記憶の整理(memory sleep): 毎晩4:05(コンテナのTZ環境変数に依存)
+5 4 * * * /opt/petit/scripts/run-for-each-character.sh memory-sleep >> /data/logs/memory-sleep-cron.log 2>&1
+
+# 体験デーモン見張り: 5分ごと
+# Phase 1時点では体験デーモン(experience-daemon)相当の公開コンポーネントがまだ存在しないため、
+# experience-watchdog.sh は対象ディレクトリが無ければ何もせずスキップする(将来の有効化に備えたプレースホルダー)
+*/5 * * * * /opt/petit/scripts/run-for-each-character.sh experience-watchdog >> /data/logs/experience-watchdog-cron.log 2>&1
